@@ -123,6 +123,11 @@ public class Transaction extends ChildMessage {
      */
     public static final Coin MIN_NONDUST_OUTPUT = Coin.valueOf(546); // satoshis
 
+    /**
+     * Segwit makes sigop limit four times higher and scales regular sigops by four.
+     */
+    public static final int WITNESS_SCALE_FACTOR = 4;
+
     // These are bitcoin serialized.
     private long version;
     private ArrayList<TransactionInput> inputs;
@@ -1767,5 +1772,33 @@ public class Transaction extends ChildMessage {
      */
     public void setMemo(String memo) {
         this.memo = memo;
+    }
+
+    /**
+     * Gets the transaction weight as defined in BIP141.
+     *
+     * <p>Transaction weight is a segwit-related computation 3b+t where b is the size of a
+     * transaction serialized in the traditional manner without witness data, and t is the size of
+     * a transaction serialized in the segwit format with witness data.
+     */
+    // TODO: write tests for this
+    public int getWeight() {
+        if (!hasWitnesses()) {
+            return getMessageSize() * 4;
+        }
+        try (final ByteArrayOutputStream stream = new UnsafeByteArrayOutputStream(length)) {
+            bitcoinSerializeToStream(stream, false);
+            final int baseSize = stream.size();
+            stream.reset();
+            bitcoinSerializeToStream(stream, true);
+            final int totalSize = stream.size();
+            return baseSize * 3 + totalSize;
+        } catch (IOException e) {
+            throw new RuntimeException(e); // cannot happen
+        }
+    }
+
+    public int getVirtualTransactionSize() {
+        return (getWeight() + WITNESS_SCALE_FACTOR - 1) / WITNESS_SCALE_FACTOR;
     }
 }
