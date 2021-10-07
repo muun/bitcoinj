@@ -49,6 +49,7 @@ public class SegwitAddress extends Address {
     public static final int WITNESS_PROGRAM_LENGTH_SH = 32;
     public static final int WITNESS_PROGRAM_MIN_LENGTH = 2;
     public static final int WITNESS_PROGRAM_MAX_LENGTH = 40;
+    public static final int WITNESS_PROGRAM_LENGTH_P2TR = 32;
 
     /**
      * Private constructor. Use {@link #fromBech32(NetworkParameters, String)},
@@ -100,9 +101,13 @@ public class SegwitAddress extends Address {
             throw new AddressFormatException.InvalidDataLength("Invalid length: " + witnessProgram.length);
         // Check script length for version 0
         if (witnessVersion == 0 && witnessProgram.length != WITNESS_PROGRAM_LENGTH_PKH
-                && witnessProgram.length != WITNESS_PROGRAM_LENGTH_SH)
+                && witnessProgram.length != WITNESS_PROGRAM_LENGTH_SH) {
             throw new AddressFormatException.InvalidDataLength(
                     "Invalid length for address version 0: " + witnessProgram.length);
+        } else if (witnessVersion == 1 && witnessProgram.length != WITNESS_PROGRAM_LENGTH_P2TR) {
+            throw new AddressFormatException.InvalidDataLength(
+                    "Invalid length for address version 1: " + witnessProgram.length);
+        }
     }
 
     /**
@@ -130,20 +135,22 @@ public class SegwitAddress extends Address {
     }
 
     /**
-     * Get the type of output script that will be used for sending to the address. This is either
-     * {@link ScriptType#P2WPKH} or {@link ScriptType#P2WSH}.
+     * Get the type of output script that will be used for sending to the address. This is one of
+     * {@link ScriptType#P2WPKH}, {@link ScriptType#P2WSH} or {@link ScriptType#P2TR}.
      * 
      * @return type of output script
      */
     @Override
     public ScriptType getOutputScriptType() {
         int version = getWitnessVersion();
-        checkState(version == 0);
+        checkState(version == 0 || version == 1);
         int programLength = getWitnessProgram().length;
-        if (programLength == WITNESS_PROGRAM_LENGTH_PKH)
+        if (version == 0 && programLength == WITNESS_PROGRAM_LENGTH_PKH)
             return ScriptType.P2WPKH;
-        if (programLength == WITNESS_PROGRAM_LENGTH_SH)
+        if (version == 0 && programLength == WITNESS_PROGRAM_LENGTH_SH)
             return ScriptType.P2WSH;
+        if (version == 1 && programLength == WITNESS_PROGRAM_LENGTH_P2TR)
+            return ScriptType.P2TR;
         throw new IllegalStateException("Cannot happen.");
     }
 
@@ -188,6 +195,24 @@ public class SegwitAddress extends Address {
         return address;
     }
 
+    private static SegwitAddress fromWitnessProgram(NetworkParameters params, int witnessVersion, byte[] program) {
+        return new SegwitAddress(params, witnessVersion, program);
+    }
+
+    /**
+     * Construct a {@link SegwitAddress} that represents the given combined X-only pub key.
+     * The resulting address will be either a P2TR type of address.
+     *
+     * @param params
+     *            network this address is valid for
+     * @param pubKeyBytes
+     *            32-byte x-only public key bytes
+     * @return constructed address
+     */
+    public static SegwitAddress fromCombinedXOnlyPubKey(NetworkParameters params, byte[] pubKeyBytes) {
+        return fromWitnessProgram(params, 1, pubKeyBytes);
+    }
+
     /**
      * Construct a {@link SegwitAddress} that represents the given hash, which is either a pubkey hash or a script hash.
      * The resulting address will be either a P2WPKH or a P2WSH type of address.
@@ -199,7 +224,7 @@ public class SegwitAddress extends Address {
      * @return constructed address
      */
     public static SegwitAddress fromHash(NetworkParameters params, byte[] hash) {
-        return new SegwitAddress(params, 0, hash);
+        return fromWitnessProgram(params, 0, hash);
     }
 
     /**

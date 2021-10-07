@@ -42,6 +42,7 @@ import org.bouncycastle.crypto.params.KeyParameter;
 
 import javax.annotation.Nullable;
 import java.io.*;
+import java.security.MessageDigest;
 import java.util.*;
 
 import static org.bitcoinj.core.Utils.*;
@@ -1393,6 +1394,142 @@ public class Transaction extends ChildMessage {
         }
 
         return Sha256Hash.twiceOf(bos.toByteArray());
+    }
+
+    public synchronized Sha256Hash hashForTaprootSignature(
+            int inputIndex,
+            byte[] scriptCode,
+            List<TransactionOutput> prevOutputs,
+            byte sigHashType){
+
+        // No support fot script path spends yet
+        checkArgument(scriptCode == null);
+        checkArgument(inputIndex < prevOutputs.size());
+        checkArgument(prevOutputs.size() == inputs.size());
+
+        int basicSigHashType = sigHashType & 0x1f;
+        boolean anyoneCanPay = (sigHashType & SigHash.ANYONECANPAY.value) == SigHash.ANYONECANPAY.value;
+        boolean signAll = (basicSigHashType != SigHash.SINGLE.value) && (basicSigHashType != SigHash.NONE.value);
+
+        // Only SigHash.ALL and !anyoneCanPay supported for now
+        checkArgument(basicSigHashType == SigHash.ALL.value);
+        checkArgument(!anyoneCanPay);
+
+        final boolean hasAnnex = false; // Reserved. Not used.
+        // According to BIP 341: 175 - is_anyonecanpay * 49 - is_none * 32 + has_annex * 32
+        int byteArraySize = 175;
+        if (anyoneCanPay) {
+            byteArraySize += 49;
+        }
+        if (basicSigHashType == SigHash.NONE.value) {
+            byteArraySize += 32;
+        }
+        if (hasAnnex) {
+            byteArraySize += 32;
+        }
+        // Add scripCode bytes, as per BIP 342
+        if (scriptCode != null) {
+            byteArraySize += 37;
+        }
+
+        try {
+            final ByteArrayOutputStream bos = new UnsafeByteArrayOutputStream(byteArraySize);
+
+            // Epoch [1] (not technically part of the message, but every use-case adds this prefix)
+            bos.write(new byte[] { 0x00 });
+
+            // SigHash type [1]
+            bos.write(new byte[] {(byte) basicSigHashType});
+
+            // nVersion [4]
+            uint32ToByteStreamLE(version, bos);
+
+            // nLockTime [4]
+            uint32ToByteStreamLE(lockTime, bos);
+
+            // input data [128 per input] always included since we failed for anyoneCanPay
+            if (!anyoneCanPay) {
+
+                // calcHashPrevOuts [32]
+                final ByteArrayOutputStream bosHashPrevouts = new UnsafeByteArrayOutputStream(256);
+                for (int i = 0; i < this.inputs.size(); ++i) {
+                    bosHashPrevouts.write(this.inputs.get(i).getOutpoint().getHash().getReversedBytes());
+                    uint32ToByteStreamLE(this.inputs.get(i).getOutpoint().getIndex(), bosHashPrevouts);
+                }
+                byte[] hashPrevouts = Sha256Hash.hash(bosHashPrevouts.toByteArray());
+
+                // calcHashAmounts [32]
+                final ByteArrayOutputStream bosHashAmounts = new UnsafeByteArrayOutputStream(256);
+                for (int i = 0; i < prevOutputs.size(); ++i) {
+                    int64ToByteStreamLE(prevOutputs.get(i).getValue().value, bosHashAmounts);
+                }
+                byte[] hashAmounts = Sha256Hash.hash(bosHashAmounts.toByteArray());
+
+                // calcHashScriptPubKeys [32]
+                final ByteArrayOutputStream bosHashScriptPubKeys = new UnsafeByteArrayOutputStream(256);
+                for (int i = 0; i < prevOutputs.size(); ++i) {
+                    final byte[] prevOutScriptBytes = prevOutputs.get(i).getScriptBytes();
+                    bosHashScriptPubKeys.write(new VarInt(prevOutScriptBytes.length).encode());
+                    bosHashScriptPubKeys.write(prevOutScriptBytes);
+                }
+                byte[] hashScriptPubKeys = Sha256Hash.hash(bosHashScriptPubKeys.toByteArray());
+
+                // calcHashSequence [32]
+                final ByteArrayOutputStream bosHashSequence = new UnsafeByteArrayOutputStream(256);
+                for (int i = 0; i < this.inputs.size(); ++i) {
+                    uint32ToByteStreamLE(this.inputs.get(i).getSequenceNumber(), bosHashSequence);
+                }
+                byte[] hashSequence = Sha256Hash.hash(bosHashSequence.toByteArray());
+
+                bos.write(hashPrevouts);
+                bos.write(hashAmounts);
+                bos.write(hashScriptPubKeys);
+                bos.write(hashSequence);
+            }
+
+            if (signAll) {
+                // output data [?] always included since we checked for SigHashAll
+                final ByteArrayOutputStream bosHashOutputs = new UnsafeByteArrayOutputStream(256);
+                for (int i = 0; i < this.outputs.size(); ++i) {
+                    uint64ToByteStreamLE(
+                            BigInteger.valueOf(this.outputs.get(i).getValue().getValue()),
+                            bosHashOutputs
+                    );
+                    bosHashOutputs.write(new VarInt(this.outputs.get(i).getScriptBytes().length).encode());
+                    bosHashOutputs.write(this.outputs.get(i).getScriptBytes());
+                }
+                byte[] hashOutputs = Sha256Hash.hash(bosHashOutputs.toByteArray());
+                bos.write(hashOutputs);
+            }
+
+            // Spend type [1] always 0x00 since we don't support annex or script path
+            bos.write(new byte[] { 0x00 });
+
+            if (anyoneCanPay) {
+                // MISSING: commit to the spent output and sequence (never since we failed for anyoneCanPay)
+            } else {
+
+                // Input index [4]
+                uint32ToByteStreamLE(inputIndex, bos);
+            }
+
+            // MISSING: do some more hashing and commit to the annex (not supported)
+
+            // MISSING: handle SigHash.Single
+
+            // MISSING: encode the script path and some metadata (not supported)
+
+            // SHA256(SHA256(TapSighash)+SHA256(TapSighash)+data)
+            final byte[] hashTag = Sha256Hash.hash("TapSighash".getBytes());
+            final MessageDigest messageDigest = Sha256Hash.newDigest();
+            messageDigest.update(hashTag);
+            messageDigest.update(hashTag);
+            messageDigest.update(bos.toByteArray());
+            return Sha256Hash.wrap(messageDigest.digest());
+
+        } catch (IOException e) {
+            throw new RuntimeException(e);  // Cannot happen.
+        }
     }
 
     @Override

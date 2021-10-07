@@ -60,7 +60,8 @@ public class Script {
         P2PK(2), // pay to pubkey
         P2SH(3), // pay to script hash
         P2WPKH(4), // pay to witness pubkey hash
-        P2WSH(5); // pay to witness script hash
+        P2WSH(5), // pay to witness script hash
+        P2TR(6); // pay to taproot
 
         public final int id;
 

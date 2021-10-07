@@ -17,11 +17,13 @@
 
 package org.bitcoinj.core;
 
+import com.sun.org.apache.xml.internal.serializer.Encodings;
 import org.bitcoinj.core.TransactionConfidence.*;
 import org.bitcoinj.crypto.TransactionSignature;
 import org.bitcoinj.params.*;
 import org.bitcoinj.script.*;
 import org.bitcoinj.testing.*;
+import org.bouncycastle.util.encoders.Hex;
 import org.easymock.*;
 import org.junit.*;
 
@@ -467,6 +469,48 @@ public class TransactionTest {
         } catch (ScriptException x) {
             return false;
         }
+    }
+
+    @Test
+    @SuppressWarnings("LineLength")
+    public void testSigHashTaproot() {
+        final String txHex = "0200000002fff49be59befe7566050737910f6ccdc5e749c7f8860ddc140386463d88c5ad0f3000000002cf68eb4a3d67f9d4c079249f7e4f27b8854815cb1ed13842d4fbf395f9e217fd605ee24090100000065235d9203f458520000000000160014b6d48333bb13b4c644e57c43a9a26df3a44b785e58020000000000001976a914eea9461a9e1e3f765d3af3e726162e0229fe3eb688ac58020000000000001976a9143a8869c9f2b5ea1d4ff3aeeb6a8fb2fffb1ad5fe88ac0ad7125c";
+        final String prevOutsHex = "02591f220000000000225120f25ad35583ea31998d968871d7de1abd2a52f6fe4178b54ea158274806ff4ece48fb310000000000225120f25ad35583ea31998d968871d7de1abd2a52f6fe4178b54ea158274806ff4ece";
+        final int index = 1;
+        final byte[] expectedSigHash = Hex.decode(
+                "626ab955d58c9a8a600a0c580549d06dc7da4e802eb2a531f62a588e430967a8"
+        );
+
+        final Transaction tx = new Transaction(RegTestParams.get(), Hex.decode(txHex));
+        final List<TransactionOutput> prevOuts = new ArrayList<>();
+
+        new Message(RegTestParams.get(), Hex.decode(prevOutsHex), 0, 0) {
+
+            @Override
+            protected void parse() throws ProtocolException {
+                this.length = 1;
+                final long length = readVarInt();
+                for (long i = 0; i < length; i++) {
+                    final BigInteger value = readUint64();
+                    final byte[] script = readByteArray();
+                    prevOuts.add(new TransactionOutput(
+                            RegTestParams.get(),
+                            null,
+                            Coin.valueOf(value.longValue()),
+                            script
+                    ));
+                }
+            }
+        };
+
+        final Sha256Hash sig = tx.hashForTaprootSignature(
+                index,
+                null,
+                prevOuts,
+                (byte) Transaction.SigHash.ALL.value
+        );
+
+        assertArrayEquals(sig.getBytes(), expectedSigHash);
     }
 
     @Test
