@@ -1689,6 +1689,8 @@ public class Script {
             return ScriptType.P2WPKH;
         if (ScriptPattern.isP2WSH(this))
             return ScriptType.P2WSH;
+        if (ScriptPattern.isP2TR(this))
+            return ScriptType.P2TR;
         return null;
     }
 

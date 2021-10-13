@@ -484,6 +484,16 @@ public class ECKey implements EncryptableItem {
         return pub.getEncoded();
     }
 
+    /**
+     * Get X-Only public key bytes.
+     */
+    public byte[] getXOnlyPubKeyBytes() {
+        // The first byte of a compressed pub key is the Y coordinate. Removing it gets us
+        // the 32 bytes of the X coordinate.
+        final byte[] pubKeyBytes = pub.getEncoded();
+        return Arrays.copyOfRange(pubKeyBytes, 1, pubKeyBytes.length);
+    }
+
     /** Gets the public key in the form of an elliptic curve point object from Bouncy Castle. */
     public ECPoint getPubKeyPoint() {
         return pub.get();

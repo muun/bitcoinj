@@ -4882,7 +4882,7 @@ public class Wallet extends BaseTaggableObject
     private boolean isTxOutputBloomFilterable(TransactionOutput out) {
         Script script = out.getScriptPubKey();
         boolean isScriptTypeSupported = ScriptPattern.isP2PK(script) || ScriptPattern.isP2SH(script)
-                || ScriptPattern.isP2WPKH(script) || ScriptPattern.isP2WSH(script);
+                || ScriptPattern.isP2WPKH(script) || ScriptPattern.isP2WSH(script) || ScriptPattern.isP2TR(script);
         return (isScriptTypeSupported && myUnspents.contains(out)) || watchedScripts.contains(script);
     }
 

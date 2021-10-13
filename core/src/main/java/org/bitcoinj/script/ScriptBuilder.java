@@ -498,7 +498,7 @@ public class ScriptBuilder {
     }
 
     /**
-     * Creates a segwit scriptPubKey that sends to the given script hash.
+     * Creates a segwit v0 scriptPubKey that sends to the given script hash.
      */
     public static Script createP2WSHOutputScript(byte[] hash) {
         checkArgument(hash.length == SegwitAddress.WITNESS_PROGRAM_LENGTH_SH);
@@ -506,11 +506,27 @@ public class ScriptBuilder {
     }
 
     /**
-     * Creates a segwit scriptPubKey for the given redeem script.
+     * Creates a segwit v0 scriptPubKey for the given redeem script.
      */
     public static Script createP2WSHOutputScript(Script redeemScript) {
         byte[] hash = Sha256Hash.hash(redeemScript.getProgram());
         return ScriptBuilder.createP2WSHOutputScript(hash);
+    }
+
+    /**
+     * Creates a segwit v1 scriptPubKey that sends to the given x-only public key.
+     */
+    public static Script createP2TROutputScript(byte[] xOnlyPubKey) {
+        checkArgument(xOnlyPubKey.length == SegwitAddress.WITNESS_PROGRAM_LENGTH_P2TR);
+        return new ScriptBuilder().smallNum(1).data(xOnlyPubKey).build();
+    }
+
+    /**
+     * Creates a segwit v1 scriptPubKey that sends to the given x-only public key.
+     */
+    public static Script createP2TROutputScript(ECKey key) {
+        checkArgument(key.isCompressed());
+        return createP2TROutputScript(key.getXOnlyPubKeyBytes());
     }
 
     /**

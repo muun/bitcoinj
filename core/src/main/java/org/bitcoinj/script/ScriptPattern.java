@@ -142,7 +142,7 @@ public class ScriptPattern {
 
     /**
      * Returns true if this script is of the form {@code OP_0 <hash>}. This can either be a P2WPKH or P2WSH scriptPubKey. These
-     * two script types were introduced with segwit.
+     * two script types were introduced with segwit v0.
      */
     public static boolean isP2WH(Script script) {
         List<ScriptChunk> chunks = script.chunks;
@@ -161,7 +161,7 @@ public class ScriptPattern {
 
     /**
      * Returns true if this script is of the form {@code OP_0 <hash>} and hash is 20 bytes long. This can only be a P2WPKH
-     * scriptPubKey. This script type was introduced with segwit.
+     * scriptPubKey. This script type was introduced with segwit v0.
      */
     public static boolean isP2WPKH(Script script) {
         if (!isP2WH(script))
@@ -175,7 +175,7 @@ public class ScriptPattern {
 
     /**
      * Returns true if this script is of the form {@code OP_0 <hash>} and hash is 32 bytes long. This can only be a P2WSH
-     * scriptPubKey. This script type was introduced with segwit.
+     * scriptPubKey. This script type was introduced with segwit v0.
      */
     public static boolean isP2WSH(Script script) {
         if (!isP2WH(script))
@@ -188,11 +188,33 @@ public class ScriptPattern {
     }
 
     /**
+     * Returns true if this script is of the form {@code OP_1 <tweaked_pubkey>} and tweaked_pubkey is 32 bytes long. This can only be a P2TR
+     * scriptPubKey. This script type was introduced with segwit v1 (taproot).
+     */
+    public static boolean isP2TR(Script script) {
+        List<ScriptChunk> chunks = script.chunks;
+        if (chunks.size() != 2)
+            return false;
+        if (!chunks.get(0).equalsOpCode(OP_1))
+            return false;
+        byte[] chunk1data = chunks.get(1).data;
+        return chunk1data != null && chunk1data.length == SegwitAddress.WITNESS_PROGRAM_LENGTH_P2TR;
+    }
+
+    /**
      * Extract the pubkey hash from a P2WPKH or the script hash from a P2WSH scriptPubKey. It's important that the
      * script is in the correct form, so you will want to guard calls to this method with
      * {@link #isP2WH(Script)}.
      */
     public static byte[] extractHashFromP2WH(Script script) {
+        return script.chunks.get(1).data;
+    }
+
+    /**
+     * Extract the x-only pubkey from a P2TR scriptPubKey. It's important that the script is in the correct form,
+     * so you will want to guard calls to this method with {@link #isP2TR(Script)}.
+     */
+    public static byte[] extractXOnlyPubKeyFromP2TR(Script script) {
         return script.chunks.get(1).data;
     }
 

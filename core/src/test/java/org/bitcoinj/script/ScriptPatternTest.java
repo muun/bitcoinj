@@ -47,6 +47,9 @@ public class ScriptPatternTest {
         assertTrue(ScriptPattern.isP2WSH(
                 ScriptBuilder.createP2WSHOutputScript(new ScriptBuilder().build())
         ));
+        assertTrue(ScriptPattern.isP2TR(
+                ScriptBuilder.createP2TROutputScript(keys.get(0))
+        ));
         assertTrue(ScriptPattern.isSentToMultisig(
                 ScriptBuilder.createMultiSigOutputScript(2, keys)
         ));
