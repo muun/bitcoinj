@@ -17,7 +17,6 @@
 
 package org.bitcoinj.core;
 
-import com.sun.org.apache.xml.internal.serializer.Encodings;
 import org.bitcoinj.core.TransactionConfidence.*;
 import org.bitcoinj.crypto.TransactionSignature;
 import org.bitcoinj.params.*;
