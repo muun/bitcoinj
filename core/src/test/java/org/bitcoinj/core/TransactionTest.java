@@ -29,6 +29,7 @@ import org.junit.*;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.math.BigInteger;
+import java.security.MessageDigest;
 import java.util.*;
 import static org.bitcoinj.core.Utils.HEX;
 
@@ -505,6 +506,128 @@ public class TransactionTest {
         final Sha256Hash sig = tx.hashForTaprootSignature(
                 index,
                 null,
+                prevOuts,
+                (byte) Transaction.SigHash.ALL.value
+        );
+
+        assertArrayEquals(sig.getBytes(), expectedSigHash);
+    }
+
+    @Test
+    public void testSigHashTaprootScriptPath() {
+        // Same tx as testSigHashTaproot above (sample data, not from the BIP341 test vectors),
+        // but spending a tapscript leaf (BIP342 script path) instead of the key path.
+        final String txHex =
+                "0200000002fff49be59befe7566050737910f6ccdc5e749c7f8860ddc1"
+                + "40386463d88c5ad0f3000000002cf68eb4a3d67f9d4c079249f7e4f27b8"
+                + "854815cb1ed13842d4fbf395f9e217fd605ee24090100000065235d9203"
+                + "f458520000000000160014b6d48333bb13b4c644e57c43a9a26df3a44b7"
+                + "85e58020000000000001976a914eea9461a9e1e3f765d3af3e726162e02"
+                + "29fe3eb688ac58020000000000001976a9143a8869c9f2b5ea1d4ff3aee"
+                + "b6a8fb2fffb1ad5fe88ac0ad7125c";
+        // The two spent outputs (BIP341 vector), both the same P2TR scriptPubKey.
+        final String prevOutsHex = "02591f220000000000225120f25ad35583ea31998d968871d7de1abd2a52f6fe4178b54ea158274806ff4ece48fb310000000000225120f25ad35583ea31998d968871d7de1abd2a52f6fe4178b54ea158274806ff4ece";
+        final int index = 0;
+
+        // Tapleaf hash for the sample script "OP_DATA_32 <32x0x01> OP_CHECKSIG":
+        // taggedHash("TapLeaf", 0xc0 || compactSize || script).
+        // Sample script being spent: "OP_DATA_32 <32x0x01> OP_CHECKSIG".
+        final byte[] innerPubKey = new byte[32];
+        Arrays.fill(innerPubKey, (byte) 0x01);
+        final byte[] leafScript = new ScriptBuilder()
+                .data(innerPubKey)
+                .op(ScriptOpCodes.OP_CHECKSIG)
+                .build()
+                .getProgram();
+
+        // Its tapleaf hash: taggedHash("TapLeaf", leaf_version || compactSize || script).
+        final byte[] leafTag = Sha256Hash.hash("TapLeaf".getBytes());
+        final MessageDigest tapLeaf = Sha256Hash.newDigest();
+        tapLeaf.update(leafTag);
+        tapLeaf.update(leafTag);
+        tapLeaf.update((byte) 0xc0);              // tapscript leaf version
+        tapLeaf.update((byte) leafScript.length); // compactSize (script is < 253 bytes)
+        tapLeaf.update(leafScript);
+        final byte[] tapLeafHash = tapLeaf.digest();
+
+        // Golden value obtained from btcd v0.24.2, an independent BIP341/342 implementation:
+        // save the program below as main.go, then run `go mod init oracle && go mod tidy && go run .`
+        // (go mod tidy downloads btcd v0.24.2 and btcutil v1.2.0).
+        //
+        // ```go
+        // package main
+        //
+        // import (
+        //     "bytes"
+        //     "encoding/hex"
+        //     "fmt"
+        //
+        //     "github.com/btcsuite/btcd/btcutil"
+        //     "github.com/btcsuite/btcd/txscript"
+        //     "github.com/btcsuite/btcd/wire"
+        // )
+        //
+        // const txHex = "0200000002fff49be59befe7566050737910f6ccdc5e749c7f8860ddc140386463d88c5ad0f3000000002cf68eb4a3d67f9d4c079249f7e4f27b8854815cb1ed13842d4fbf395f9e217fd605ee24090100000065235d9203f458520000000000160014b6d48333bb13b4c644e57c43a9a26df3a44b785e58020000000000001976a914eea9461a9e1e3f765d3af3e726162e0229fe3eb688ac58020000000000001976a9143a8869c9f2b5ea1d4ff3aeeb6a8fb2fffb1ad5fe88ac0ad7125c"
+        // const p2trHex = "5120f25ad35583ea31998d968871d7de1abd2a52f6fe4178b54ea158274806ff4ece"
+        //
+        // func main() {
+        //     rawTx, _ := hex.DecodeString(txHex)
+        //     p2trScript, _ := hex.DecodeString(p2trHex)
+        //     tx, _ := btcutil.NewTxFromBytes(rawTx)
+        //     msgTx := tx.MsgTx()
+        //     fetcher := txscript.NewMultiPrevOutFetcher(map[wire.OutPoint]*wire.TxOut{
+        //         msgTx.TxIn[0].PreviousOutPoint: {Value: 2_236_249, PkScript: p2trScript},
+        //         msgTx.TxIn[1].PreviousOutPoint: {Value: 3_275_592, PkScript: p2trScript},
+        //     })
+        //     sigHashes := txscript.NewTxSigHashes(msgTx, fetcher)
+        //     script, _ := txscript.NewScriptBuilder().
+        //             AddData(bytes.Repeat([]byte{0x01}, 32)). // OP_DATA_32 <32x0x01>
+        //             AddOp(txscript.OP_CHECKSIG).             // OP_CHECKSIG
+        //             Script()
+        //     leaf := txscript.NewBaseTapLeaf(script)
+        //     tapLeafHash := leaf.TapHash()
+        //     expectedSigHash, _ := txscript.CalcTapscriptSignaturehash(
+        //             sigHashes, txscript.SigHashAll, msgTx, 0, fetcher, leaf)
+        //     keyPathExpectedSigHash, _ := txscript.CalcTaprootSignatureHash(
+        //             sigHashes, txscript.SigHashAll, msgTx, 1, fetcher)
+        //     fmt.Printf("tapLeafHash: %x\nexpectedSigHash: %x\nexpectedSigHash (testSigHashTaproot): %x\n",
+        //             tapLeafHash[:], expectedSigHash, keyPathExpectedSigHash)
+        // }
+        // ```
+        final byte[] expectedTapLeafHash = Hex.decode(
+                "96e43f98ce59a7302b2a0d4e50234d5645e59f0329f74d6a02aa8fab066b0fc4"
+        );
+        assertArrayEquals(tapLeafHash, expectedTapLeafHash);
+
+        final byte[] expectedSigHash = Hex.decode(
+                "81072ecd5edaa818671662c9318a610d0fd5bada8e7951f6d8d216918b9e21e0"
+        );
+
+        final Transaction tx = new Transaction(RegTestParams.get(), Hex.decode(txHex));
+        final List<TransactionOutput> prevOuts = new ArrayList<>();
+
+        new Message(RegTestParams.get(), Hex.decode(prevOutsHex), 0, 0) {
+
+            @Override
+            protected void parse() throws ProtocolException {
+                this.length = 1;
+                final long length = readVarInt();
+                for (long i = 0; i < length; i++) {
+                    final BigInteger value = readUint64();
+                    final byte[] script = readByteArray();
+                    prevOuts.add(new TransactionOutput(
+                            RegTestParams.get(),
+                            null,
+                            Coin.valueOf(value.longValue()),
+                            script
+                    ));
+                }
+            }
+        };
+
+        final Sha256Hash sig = tx.hashForTaprootSignature(
+                index,
+                tapLeafHash,
                 prevOuts,
                 (byte) Transaction.SigHash.ALL.value
         );

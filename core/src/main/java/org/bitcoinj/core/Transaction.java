@@ -1396,14 +1396,36 @@ public class Transaction extends ChildMessage {
         return Sha256Hash.twiceOf(bos.toByteArray());
     }
 
+    /**
+     * <p>Calculates the Taproot signature hash for an input, that is, the message that gets signed by a Schnorr key
+     * when spending a version 1 (P2TR) witness output. Unlike the legacy and BIP143 sighashes, the Taproot sighash
+     * commits to the amounts and scriptPubKeys of <i>all</i> spent outputs, so the full list of previous outputs must
+     * be supplied. (See BIP341: https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki and
+     * BIP342: https://github.com/bitcoin/bips/blob/master/bip-0342.mediawiki)</p>
+     *
+     * <p>Passing a null scriptCode produces a key-path (BIP341) sighash. Passing the 32-byte tapleaf hash of the
+     * script being spent produces a script-path (BIP342) sighash, which additionally commits to that leaf.</p>
+     *
+     * <p>Limitations: only SigHash.ALL without ANYONECANPAY is supported; SigHash.NONE, SigHash.SINGLE and the annex
+     * are not implemented. OP_CODESEPARATOR is not supported: the codesep_pos in the script-path extension is always
+     * committed as 0xffffffff, so this method produces a correct sighash only for scripts that contain no executed
+     * OP_CODESEPARATOR.</p>
+     *
+     * @param inputIndex   input the signature is being calculated for. Tx signatures are always relative to an input.
+     * @param scriptCode   the 32-byte tapleaf hash for a script-path spend, or null for a key-path spend.
+     * @param prevOutputs  the previous outputs being spent, one per input, in input order.
+     * @param sigHashType  should be SigHash.ALL, and not ANYONECANPAY.
+     */
     public synchronized Sha256Hash hashForTaprootSignature(
             int inputIndex,
             byte[] scriptCode,
             List<TransactionOutput> prevOutputs,
             byte sigHashType){
 
-        // No support fot script path spends yet
-        checkArgument(scriptCode == null);
+        // A non-null scriptCode is the 32-byte tapleaf hash of the script being spent (BIP342
+        // script path). Null means a key-path spend (BIP341).
+        final boolean hasScriptPath = scriptCode != null;
+        checkArgument(!hasScriptPath || scriptCode.length == 32);
         checkArgument(inputIndex < prevOutputs.size());
         checkArgument(prevOutputs.size() == inputs.size());
 
@@ -1502,8 +1524,9 @@ public class Transaction extends ChildMessage {
                 bos.write(hashOutputs);
             }
 
-            // Spend type [1] always 0x00 since we don't support annex or script path
-            bos.write(new byte[] { 0x00 });
+            // Spend type [1] = 2 * ext_flag + annex_present. ext_flag is 1 for a tapscript
+            // (BIP342) spend, 0 for key path. We never have an annex.
+            bos.write(new byte[] { (byte) (hasScriptPath ? 0x02 : 0x00) });
 
             if (anyoneCanPay) {
                 // MISSING: commit to the spent output and sequence (never since we failed for anyoneCanPay)
@@ -1517,7 +1540,12 @@ public class Transaction extends ChildMessage {
 
             // MISSING: handle SigHash.Single
 
-            // MISSING: encode the script path and some metadata (not supported)
+            // Script path extension (BIP342, ext_flag = 1): commit to the leaf being spent.
+            if (hasScriptPath) {
+                bos.write(scriptCode);                   // tapleaf_hash [32]
+                bos.write(new byte[] { 0x00 });          // key_version  [1]
+                uint32ToByteStreamLE(0xffffffffL, bos);  // codesep_pos  [4] (no OP_CODESEPARATOR)
+            }
 
             // SHA256(SHA256(TapSighash)+SHA256(TapSighash)+data)
             final byte[] hashTag = Sha256Hash.hash("TapSighash".getBytes());
