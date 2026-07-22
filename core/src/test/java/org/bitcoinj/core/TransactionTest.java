@@ -636,6 +636,78 @@ public class TransactionTest {
     }
 
     @Test
+    public void testSigHashTaprootScriptPathDefault() {
+        // Same tx, prevouts and tapscript leaf as testSigHashTaprootScriptPath, signed with
+        // SIGHASH_DEFAULT (0x00) instead of ALL.
+        final String txHex =
+                "0200000002fff49be59befe7566050737910f6ccdc5e749c7f8860ddc1"
+                + "40386463d88c5ad0f3000000002cf68eb4a3d67f9d4c079249f7e4f27b8"
+                + "854815cb1ed13842d4fbf395f9e217fd605ee24090100000065235d9203"
+                + "f458520000000000160014b6d48333bb13b4c644e57c43a9a26df3a44b7"
+                + "85e58020000000000001976a914eea9461a9e1e3f765d3af3e726162e02"
+                + "29fe3eb688ac58020000000000001976a9143a8869c9f2b5ea1d4ff3aee"
+                + "b6a8fb2fffb1ad5fe88ac0ad7125c";
+        final String prevOutsHex = "02591f220000000000225120f25ad35583ea31998d968871d7de1abd2a52f6fe4178b54ea158274806ff4ece48fb310000000000225120f25ad35583ea31998d968871d7de1abd2a52f6fe4178b54ea158274806ff4ece";
+        final int index = 0;
+
+        // Sample script being spent: "OP_DATA_32 <32x0x01> OP_CHECKSIG".
+        final byte[] innerPubKey = new byte[32];
+        Arrays.fill(innerPubKey, (byte) 0x01);
+        final byte[] leafScript = new ScriptBuilder()
+                .data(innerPubKey)
+                .op(ScriptOpCodes.OP_CHECKSIG)
+                .build()
+                .getProgram();
+
+        // Its tapleaf hash: taggedHash("TapLeaf", leaf_version || compactSize || script).
+        final byte[] leafTag = Sha256Hash.hash("TapLeaf".getBytes());
+        final MessageDigest tapLeaf = Sha256Hash.newDigest();
+        tapLeaf.update(leafTag);
+        tapLeaf.update(leafTag);
+        tapLeaf.update((byte) 0xc0);              // tapscript leaf version
+        tapLeaf.update((byte) leafScript.length); // compactSize (script is < 253 bytes)
+        tapLeaf.update(leafScript);
+        final byte[] tapLeafHash = tapLeaf.digest();
+
+        // Golden value from btcd v0.24.2: the main.go snippet in testSigHashTaprootScriptPath,
+        // with txscript.SigHashDefault instead of txscript.SigHashAll.
+        final byte[] expectedSigHash = Hex.decode(
+                "fc6011b62bd02db1ef43f727925e850216657d1d8da2fba28e927f03f9f4ad9a"
+        );
+
+        final Transaction tx = new Transaction(RegTestParams.get(), Hex.decode(txHex));
+        final List<TransactionOutput> prevOuts = new ArrayList<>();
+
+        new Message(RegTestParams.get(), Hex.decode(prevOutsHex), 0, 0) {
+
+            @Override
+            protected void parse() throws ProtocolException {
+                this.length = 1;
+                final long length = readVarInt();
+                for (long i = 0; i < length; i++) {
+                    final BigInteger value = readUint64();
+                    final byte[] script = readByteArray();
+                    prevOuts.add(new TransactionOutput(
+                            RegTestParams.get(),
+                            null,
+                            Coin.valueOf(value.longValue()),
+                            script
+                    ));
+                }
+            }
+        };
+
+        final Sha256Hash sig = tx.hashForTaprootSignature(
+                index,
+                tapLeafHash,
+                prevOuts,
+                (byte) Transaction.SigHash.DEFAULT.value
+        );
+
+        assertArrayEquals(sig.getBytes(), expectedSigHash);
+    }
+
+    @Test
     public void testToStringWhenLockTimeIsSpecifiedInBlockHeight() {
         Transaction tx = FakeTxBuilder.createFakeTx(UNITTEST);
         TransactionInput input = tx.getInput(0);
