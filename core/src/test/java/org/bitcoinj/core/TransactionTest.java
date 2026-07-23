@@ -471,26 +471,33 @@ public class TransactionTest {
         }
     }
 
-    @Test
-    @SuppressWarnings("LineLength")
-    public void testSigHashTaproot() {
-        final String txHex = "0200000002fff49be59befe7566050737910f6ccdc5e749c7f8860ddc140386463d88c5ad0f3000000002cf68eb4a3d67f9d4c079249f7e4f27b8854815cb1ed13842d4fbf395f9e217fd605ee24090100000065235d9203f458520000000000160014b6d48333bb13b4c644e57c43a9a26df3a44b785e58020000000000001976a914eea9461a9e1e3f765d3af3e726162e0229fe3eb688ac58020000000000001976a9143a8869c9f2b5ea1d4ff3aeeb6a8fb2fffb1ad5fe88ac0ad7125c";
-        final String prevOutsHex = "02591f220000000000225120f25ad35583ea31998d968871d7de1abd2a52f6fe4178b54ea158274806ff4ece48fb310000000000225120f25ad35583ea31998d968871d7de1abd2a52f6fe4178b54ea158274806ff4ece";
-        final int index = 1;
-        final byte[] expectedSigHash = Hex.decode(
-                "626ab955d58c9a8a600a0c580549d06dc7da4e802eb2a531f62a588e430967a8"
-        );
+    // Shared fixture for the testSigHashTaproot* tests below: a two-input transaction spending
+    // two P2TR outputs (sample data, not from the BIP341 test vectors).
+    private static final String TAPROOT_TX_HEX =
+            "0200000002fff49be59befe7566050737910f6ccdc5e749c7f8860ddc1"
+            + "40386463d88c5ad0f3000000002cf68eb4a3d67f9d4c079249f7e4f27b8"
+            + "854815cb1ed13842d4fbf395f9e217fd605ee24090100000065235d9203"
+            + "f458520000000000160014b6d48333bb13b4c644e57c43a9a26df3a44b7"
+            + "85e58020000000000001976a914eea9461a9e1e3f765d3af3e726162e02"
+            + "29fe3eb688ac58020000000000001976a9143a8869c9f2b5ea1d4ff3aee"
+            + "b6a8fb2fffb1ad5fe88ac0ad7125c";
 
-        final Transaction tx = new Transaction(RegTestParams.get(), Hex.decode(txHex));
+    // The two spent outputs, both the same P2TR scriptPubKey.
+    private static final String TAPROOT_PREV_OUTS_HEX =
+            "02591f220000000000225120f25ad35583ea31998d968871d7de1abd2a"
+            + "52f6fe4178b54ea158274806ff4ece48fb310000000000225120f25ad3"
+            + "5583ea31998d968871d7de1abd2a52f6fe4178b54ea158274806ff4ece";
+
+    private static List<TransactionOutput> parseTaprootPrevOuts() {
         final List<TransactionOutput> prevOuts = new ArrayList<>();
 
-        new Message(RegTestParams.get(), Hex.decode(prevOutsHex), 0, 0) {
+        new Message(RegTestParams.get(), Hex.decode(TAPROOT_PREV_OUTS_HEX), 0, 0) {
 
             @Override
             protected void parse() throws ProtocolException {
                 this.length = 1;
-                final long length = readVarInt();
-                for (long i = 0; i < length; i++) {
+                final long count = readVarInt();
+                for (long i = 0; i < count; i++) {
                     final BigInteger value = readUint64();
                     final byte[] script = readByteArray();
                     prevOuts.add(new TransactionOutput(
@@ -503,35 +510,12 @@ public class TransactionTest {
             }
         };
 
-        final Sha256Hash sig = tx.hashForTaprootSignature(
-                index,
-                null,
-                prevOuts,
-                (byte) Transaction.SigHash.ALL.value
-        );
-
-        assertArrayEquals(sig.getBytes(), expectedSigHash);
+        return prevOuts;
     }
 
-    @Test
-    public void testSigHashTaprootScriptPath() {
-        // Same tx as testSigHashTaproot above (sample data, not from the BIP341 test vectors),
-        // but spending a tapscript leaf (BIP342 script path) instead of the key path.
-        final String txHex =
-                "0200000002fff49be59befe7566050737910f6ccdc5e749c7f8860ddc1"
-                + "40386463d88c5ad0f3000000002cf68eb4a3d67f9d4c079249f7e4f27b8"
-                + "854815cb1ed13842d4fbf395f9e217fd605ee24090100000065235d9203"
-                + "f458520000000000160014b6d48333bb13b4c644e57c43a9a26df3a44b7"
-                + "85e58020000000000001976a914eea9461a9e1e3f765d3af3e726162e02"
-                + "29fe3eb688ac58020000000000001976a9143a8869c9f2b5ea1d4ff3aee"
-                + "b6a8fb2fffb1ad5fe88ac0ad7125c";
-        // The two spent outputs (BIP341 vector), both the same P2TR scriptPubKey.
-        final String prevOutsHex = "02591f220000000000225120f25ad35583ea31998d968871d7de1abd2a52f6fe4178b54ea158274806ff4ece48fb310000000000225120f25ad35583ea31998d968871d7de1abd2a52f6fe4178b54ea158274806ff4ece";
-        final int index = 0;
-
-        // Tapleaf hash for the sample script "OP_DATA_32 <32x0x01> OP_CHECKSIG":
-        // taggedHash("TapLeaf", 0xc0 || compactSize || script).
-        // Sample script being spent: "OP_DATA_32 <32x0x01> OP_CHECKSIG".
+    // Tapleaf hash of the sample script being spent, "OP_DATA_32 <32x0x01> OP_CHECKSIG":
+    // taggedHash("TapLeaf", leaf_version || compactSize || script).
+    private static byte[] taprootTestTapLeafHash() {
         final byte[] innerPubKey = new byte[32];
         Arrays.fill(innerPubKey, (byte) 0x01);
         final byte[] leafScript = new ScriptBuilder()
@@ -540,7 +524,6 @@ public class TransactionTest {
                 .build()
                 .getProgram();
 
-        // Its tapleaf hash: taggedHash("TapLeaf", leaf_version || compactSize || script).
         final byte[] leafTag = Sha256Hash.hash("TapLeaf".getBytes());
         final MessageDigest tapLeaf = Sha256Hash.newDigest();
         tapLeaf.update(leafTag);
@@ -548,9 +531,47 @@ public class TransactionTest {
         tapLeaf.update((byte) 0xc0);              // tapscript leaf version
         tapLeaf.update((byte) leafScript.length); // compactSize (script is < 253 bytes)
         tapLeaf.update(leafScript);
-        final byte[] tapLeafHash = tapLeaf.digest();
+        return tapLeaf.digest();
+    }
 
-        // Golden value obtained from btcd v0.24.2, an independent BIP341/342 implementation:
+    // Computes the taproot sighash of TAPROOT_TX_HEX for the given input and sighash type
+    // (script-path when tapLeafHash is non-null, key-path otherwise) and asserts it matches
+    // the expected golden value.
+    private static void assertTaprootSigHash(
+            int inputIndex,
+            byte[] tapLeafHash,
+            Transaction.SigHash sigHashType,
+            String expectedSigHashHex
+    ) {
+        final Transaction tx = new Transaction(RegTestParams.get(), Hex.decode(TAPROOT_TX_HEX));
+
+        final Sha256Hash sigHash = tx.hashForTaprootSignature(
+                inputIndex,
+                tapLeafHash,
+                parseTaprootPrevOuts(),
+                (byte) sigHashType.value
+        );
+
+        assertArrayEquals(sigHash.getBytes(), Hex.decode(expectedSigHashHex));
+    }
+
+    @Test
+    public void testSigHashTaproot() {
+        // Key-path (BIP341) spend of input 1, signed with SIGHASH_ALL. Golden value obtained from
+        // btcd v0.24.2 (keyPathExpectedSigHash in the main.go snippet in testSigHashTaprootScriptPath).
+        assertTaprootSigHash(
+                1,
+                null,
+                Transaction.SigHash.ALL,
+                "626ab955d58c9a8a600a0c580549d06dc7da4e802eb2a531f62a588e430967a8"
+        );
+    }
+
+    @Test
+    public void testSigHashTaprootScriptPath() {
+        // Spending a tapscript leaf (BIP342 script path) of input 0 instead of the key path.
+        //
+        // Golden values obtained from btcd v0.24.2, an independent BIP341/342 implementation:
         // save the program below as main.go, then run `go mod init oracle && go mod tidy && go run .`
         // (go mod tidy downloads btcd v0.24.2 and btcutil v1.2.0).
         //
@@ -584,127 +605,33 @@ public class TransactionTest {
         //             AddData(bytes.Repeat([]byte{0x01}, 32)). // OP_DATA_32 <32x0x01>
         //             AddOp(txscript.OP_CHECKSIG).             // OP_CHECKSIG
         //             Script()
-        //     leaf := txscript.NewBaseTapLeaf(script)
-        //     tapLeafHash := leaf.TapHash()
         //     expectedSigHash, _ := txscript.CalcTapscriptSignaturehash(
-        //             sigHashes, txscript.SigHashAll, msgTx, 0, fetcher, leaf)
+        //             sigHashes, txscript.SigHashAll, msgTx, 0, fetcher, txscript.NewBaseTapLeaf(script))
         //     keyPathExpectedSigHash, _ := txscript.CalcTaprootSignatureHash(
         //             sigHashes, txscript.SigHashAll, msgTx, 1, fetcher)
-        //     fmt.Printf("tapLeafHash: %x\nexpectedSigHash: %x\nexpectedSigHash (testSigHashTaproot): %x\n",
-        //             tapLeafHash[:], expectedSigHash, keyPathExpectedSigHash)
+        //     fmt.Printf("expectedSigHash: %x\nexpectedSigHash (testSigHashTaproot): %x\n",
+        //             expectedSigHash, keyPathExpectedSigHash)
         // }
         // ```
-        final byte[] expectedTapLeafHash = Hex.decode(
-                "96e43f98ce59a7302b2a0d4e50234d5645e59f0329f74d6a02aa8fab066b0fc4"
-        );
-        assertArrayEquals(tapLeafHash, expectedTapLeafHash);
-
-        final byte[] expectedSigHash = Hex.decode(
+        assertTaprootSigHash(
+                0,
+                taprootTestTapLeafHash(),
+                Transaction.SigHash.ALL,
                 "81072ecd5edaa818671662c9318a610d0fd5bada8e7951f6d8d216918b9e21e0"
         );
-
-        final Transaction tx = new Transaction(RegTestParams.get(), Hex.decode(txHex));
-        final List<TransactionOutput> prevOuts = new ArrayList<>();
-
-        new Message(RegTestParams.get(), Hex.decode(prevOutsHex), 0, 0) {
-
-            @Override
-            protected void parse() throws ProtocolException {
-                this.length = 1;
-                final long length = readVarInt();
-                for (long i = 0; i < length; i++) {
-                    final BigInteger value = readUint64();
-                    final byte[] script = readByteArray();
-                    prevOuts.add(new TransactionOutput(
-                            RegTestParams.get(),
-                            null,
-                            Coin.valueOf(value.longValue()),
-                            script
-                    ));
-                }
-            }
-        };
-
-        final Sha256Hash sig = tx.hashForTaprootSignature(
-                index,
-                tapLeafHash,
-                prevOuts,
-                (byte) Transaction.SigHash.ALL.value
-        );
-
-        assertArrayEquals(sig.getBytes(), expectedSigHash);
     }
 
     @Test
     public void testSigHashTaprootScriptPathDefault() {
-        // Same tx, prevouts and tapscript leaf as testSigHashTaprootScriptPath, signed with
-        // SIGHASH_DEFAULT (0x00) instead of ALL.
-        final String txHex =
-                "0200000002fff49be59befe7566050737910f6ccdc5e749c7f8860ddc1"
-                + "40386463d88c5ad0f3000000002cf68eb4a3d67f9d4c079249f7e4f27b8"
-                + "854815cb1ed13842d4fbf395f9e217fd605ee24090100000065235d9203"
-                + "f458520000000000160014b6d48333bb13b4c644e57c43a9a26df3a44b7"
-                + "85e58020000000000001976a914eea9461a9e1e3f765d3af3e726162e02"
-                + "29fe3eb688ac58020000000000001976a9143a8869c9f2b5ea1d4ff3aee"
-                + "b6a8fb2fffb1ad5fe88ac0ad7125c";
-        final String prevOutsHex = "02591f220000000000225120f25ad35583ea31998d968871d7de1abd2a52f6fe4178b54ea158274806ff4ece48fb310000000000225120f25ad35583ea31998d968871d7de1abd2a52f6fe4178b54ea158274806ff4ece";
-        final int index = 0;
-
-        // Sample script being spent: "OP_DATA_32 <32x0x01> OP_CHECKSIG".
-        final byte[] innerPubKey = new byte[32];
-        Arrays.fill(innerPubKey, (byte) 0x01);
-        final byte[] leafScript = new ScriptBuilder()
-                .data(innerPubKey)
-                .op(ScriptOpCodes.OP_CHECKSIG)
-                .build()
-                .getProgram();
-
-        // Its tapleaf hash: taggedHash("TapLeaf", leaf_version || compactSize || script).
-        final byte[] leafTag = Sha256Hash.hash("TapLeaf".getBytes());
-        final MessageDigest tapLeaf = Sha256Hash.newDigest();
-        tapLeaf.update(leafTag);
-        tapLeaf.update(leafTag);
-        tapLeaf.update((byte) 0xc0);              // tapscript leaf version
-        tapLeaf.update((byte) leafScript.length); // compactSize (script is < 253 bytes)
-        tapLeaf.update(leafScript);
-        final byte[] tapLeafHash = tapLeaf.digest();
-
-        // Golden value from btcd v0.24.2: the main.go snippet in testSigHashTaprootScriptPath,
-        // with txscript.SigHashDefault instead of txscript.SigHashAll.
-        final byte[] expectedSigHash = Hex.decode(
+        // Same tapscript leaf spend as testSigHashTaprootScriptPath, signed with SIGHASH_DEFAULT
+        // (0x00) instead of ALL. Golden value from btcd v0.24.2: the main.go snippet in
+        // testSigHashTaprootScriptPath, with txscript.SigHashDefault instead of txscript.SigHashAll.
+        assertTaprootSigHash(
+                0,
+                taprootTestTapLeafHash(),
+                Transaction.SigHash.DEFAULT,
                 "fc6011b62bd02db1ef43f727925e850216657d1d8da2fba28e927f03f9f4ad9a"
         );
-
-        final Transaction tx = new Transaction(RegTestParams.get(), Hex.decode(txHex));
-        final List<TransactionOutput> prevOuts = new ArrayList<>();
-
-        new Message(RegTestParams.get(), Hex.decode(prevOutsHex), 0, 0) {
-
-            @Override
-            protected void parse() throws ProtocolException {
-                this.length = 1;
-                final long length = readVarInt();
-                for (long i = 0; i < length; i++) {
-                    final BigInteger value = readUint64();
-                    final byte[] script = readByteArray();
-                    prevOuts.add(new TransactionOutput(
-                            RegTestParams.get(),
-                            null,
-                            Coin.valueOf(value.longValue()),
-                            script
-                    ));
-                }
-            }
-        };
-
-        final Sha256Hash sig = tx.hashForTaprootSignature(
-                index,
-                tapLeafHash,
-                prevOuts,
-                (byte) Transaction.SigHash.DEFAULT.value
-        );
-
-        assertArrayEquals(sig.getBytes(), expectedSigHash);
     }
 
     @Test
