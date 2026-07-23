@@ -568,6 +568,19 @@ public class TransactionTest {
     }
 
     @Test
+    public void testSigHashTaprootDefault() {
+        // Same key-path spend as testSigHashTaproot, signed with SIGHASH_DEFAULT (0x00) instead
+        // of ALL. Golden value from btcd v0.24.2: keyPathExpectedSigHash in the main.go snippet in
+        // testSigHashTaprootScriptPath, with txscript.SigHashDefault instead of txscript.SigHashAll.
+        assertTaprootSigHash(
+                1,
+                null,
+                Transaction.SigHash.DEFAULT,
+                "92ac7cead5a678703fd3672b46d224d2bbca88d8c706ebf9f93bf60951726328"
+        );
+    }
+
+    @Test
     public void testSigHashTaprootScriptPath() {
         // Spending a tapscript leaf (BIP342 script path) of input 0 instead of the key path.
         //
