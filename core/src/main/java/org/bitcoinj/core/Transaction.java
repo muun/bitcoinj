@@ -527,6 +527,7 @@ public class Transaction extends ChildMessage {
      */
     public enum SigHash {
         DEFAULT(0), // Taproot-only (BIP341): hashes like ALL, but the signature omits the sighash byte.
+                    // Shares value 0 with the legacy UNSET below — don't map from value to constant.
         ALL(1),
         NONE(2),
         SINGLE(3),
@@ -535,6 +536,7 @@ public class Transaction extends ChildMessage {
         ANYONECANPAY_NONE(0x82),
         ANYONECANPAY_SINGLE(0x83),
         UNSET(0); // Caution: Using this type in isolation is non-standard. Treated similar to ALL.
+                  // Same value 0 as DEFAULT above: UNSET is the legacy (pre-taproot) meaning of 0.
 
         public final int value;
 
