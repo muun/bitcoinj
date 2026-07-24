@@ -526,6 +526,8 @@ public class Transaction extends ChildMessage {
      * transaction can be redeemed, specifically, they control how the hash of the transaction is calculated.
      */
     public enum SigHash {
+        DEFAULT(0), // Taproot-only (BIP341): hashes like ALL, but the signature omits the sighash byte.
+                    // Shares value 0 with the legacy UNSET below — don't map from value to constant.
         ALL(1),
         NONE(2),
         SINGLE(3),
@@ -534,6 +536,7 @@ public class Transaction extends ChildMessage {
         ANYONECANPAY_NONE(0x82),
         ANYONECANPAY_SINGLE(0x83),
         UNSET(0); // Caution: Using this type in isolation is non-standard. Treated similar to ALL.
+                  // Same value 0 as DEFAULT above: UNSET is the legacy (pre-taproot) meaning of 0.
 
         public final int value;
 
@@ -1406,15 +1409,15 @@ public class Transaction extends ChildMessage {
      * <p>Passing a null scriptCode produces a key-path (BIP341) sighash. Passing the 32-byte tapleaf hash of the
      * script being spent produces a script-path (BIP342) sighash, which additionally commits to that leaf.</p>
      *
-     * <p>Limitations: only SigHash.ALL without ANYONECANPAY is supported; SigHash.NONE, SigHash.SINGLE and the annex
-     * are not implemented. OP_CODESEPARATOR is not supported: the codesep_pos in the script-path extension is always
-     * committed as 0xffffffff, so this method produces a correct sighash only for scripts that contain no executed
-     * OP_CODESEPARATOR.</p>
+     * <p>Limitations: only SigHash.DEFAULT and SigHash.ALL without ANYONECANPAY are supported; SigHash.NONE,
+     * SigHash.SINGLE and the annex are not implemented. OP_CODESEPARATOR is not supported: the codesep_pos in the
+     * script-path extension is always committed as 0xffffffff, so this method produces a correct sighash only for
+     * scripts that contain no executed OP_CODESEPARATOR.</p>
      *
      * @param inputIndex   input the signature is being calculated for. Tx signatures are always relative to an input.
      * @param scriptCode   the 32-byte tapleaf hash for a script-path spend, or null for a key-path spend.
      * @param prevOutputs  the previous outputs being spent, one per input, in input order.
-     * @param sigHashType  should be SigHash.ALL, and not ANYONECANPAY.
+     * @param sigHashType  should be SigHash.DEFAULT or SigHash.ALL, and not ANYONECANPAY.
      */
     public synchronized Sha256Hash hashForTaprootSignature(
             int inputIndex,
@@ -1433,8 +1436,8 @@ public class Transaction extends ChildMessage {
         boolean anyoneCanPay = (sigHashType & SigHash.ANYONECANPAY.value) == SigHash.ANYONECANPAY.value;
         boolean signAll = (basicSigHashType != SigHash.SINGLE.value) && (basicSigHashType != SigHash.NONE.value);
 
-        // Only SigHash.ALL and !anyoneCanPay supported for now
-        checkArgument(basicSigHashType == SigHash.ALL.value);
+        // Only SigHash.DEFAULT, SigHash.ALL and !anyoneCanPay supported for now
+        checkArgument(basicSigHashType == SigHash.DEFAULT.value || basicSigHashType == SigHash.ALL.value);
         checkArgument(!anyoneCanPay);
 
         final boolean hasAnnex = false; // Reserved. Not used.
