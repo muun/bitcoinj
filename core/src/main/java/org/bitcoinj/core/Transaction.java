@@ -1424,7 +1424,7 @@ public class Transaction extends ChildMessage {
             int inputIndex,
             byte[] scriptCode,
             List<TransactionOutput> prevOutputs,
-            byte sigHashType){
+            SigHash sigHashType){
 
         // A non-null scriptCode is the 32-byte tapleaf hash of the script being spent (BIP342
         // script path). Null means a key-path spend (BIP341).
@@ -1433,8 +1433,9 @@ public class Transaction extends ChildMessage {
         checkArgument(inputIndex < prevOutputs.size());
         checkArgument(prevOutputs.size() == inputs.size());
 
-        int basicSigHashType = sigHashType & 0x1f;
-        boolean anyoneCanPay = (sigHashType & SigHash.ANYONECANPAY.value) == SigHash.ANYONECANPAY.value;
+        final byte sigHashTypeByte = sigHashType.byteValue();
+        int basicSigHashType = sigHashTypeByte & 0x1f;
+        boolean anyoneCanPay = (sigHashTypeByte & SigHash.ANYONECANPAY.value) == SigHash.ANYONECANPAY.value;
         boolean signAll = (basicSigHashType != SigHash.SINGLE.value) && (basicSigHashType != SigHash.NONE.value);
 
         // Only SigHash.DEFAULT, SigHash.ALL and SigHash.ANYONECANPAY_ALL supported for now.
@@ -1466,7 +1467,7 @@ public class Transaction extends ChildMessage {
             bos.write(new byte[] { 0x00 });
 
             // SigHash type [1]: the full type byte, including the ANYONECANPAY flag if set
-            bos.write(new byte[] { sigHashType });
+            bos.write(new byte[] { sigHashTypeByte });
 
             // nVersion [4]
             uint32ToByteStreamLE(version, bos);

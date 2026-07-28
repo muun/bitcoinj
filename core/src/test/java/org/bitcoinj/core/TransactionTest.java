@@ -549,7 +549,7 @@ public class TransactionTest {
                 inputIndex,
                 tapLeafHash,
                 parseTaprootPrevOuts(),
-                sigHashType.byteValue()
+                sigHashType
         );
 
         assertArrayEquals(sigHash.getBytes(), Hex.decode(expectedSigHashHex));
