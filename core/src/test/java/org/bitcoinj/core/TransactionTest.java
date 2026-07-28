@@ -540,7 +540,7 @@ public class TransactionTest {
     private static void assertTaprootSigHash(
             int inputIndex,
             byte[] tapLeafHash,
-            byte sigHashType,
+            Transaction.SigHash sigHashType,
             String expectedSigHashHex
     ) {
         final Transaction tx = new Transaction(RegTestParams.get(), Hex.decode(TAPROOT_TX_HEX));
@@ -549,7 +549,7 @@ public class TransactionTest {
                 inputIndex,
                 tapLeafHash,
                 parseTaprootPrevOuts(),
-                sigHashType
+                sigHashType.byteValue()
         );
 
         assertArrayEquals(sigHash.getBytes(), Hex.decode(expectedSigHashHex));
@@ -562,7 +562,7 @@ public class TransactionTest {
         assertTaprootSigHash(
                 1,
                 null,
-                (byte) Transaction.SigHash.ALL.value,
+                Transaction.SigHash.ALL,
                 "626ab955d58c9a8a600a0c580549d06dc7da4e802eb2a531f62a588e430967a8"
         );
     }
@@ -575,7 +575,7 @@ public class TransactionTest {
         assertTaprootSigHash(
                 1,
                 null,
-                (byte) Transaction.SigHash.DEFAULT.value,
+                Transaction.SigHash.DEFAULT,
                 "92ac7cead5a678703fd3672b46d224d2bbca88d8c706ebf9f93bf60951726328"
         );
     }
@@ -589,7 +589,7 @@ public class TransactionTest {
         assertTaprootSigHash(
                 1,
                 null,
-                (byte) (Transaction.SigHash.ALL.value | Transaction.SigHash.ANYONECANPAY.value),
+                Transaction.SigHash.ANYONECANPAY_ALL,
                 "494fcea1db6f47aea9325255ba8b95c9f336e72a02f734c9f0c733878c463f58"
         );
     }
@@ -643,7 +643,7 @@ public class TransactionTest {
         assertTaprootSigHash(
                 0,
                 taprootTestTapLeafHash(),
-                (byte) Transaction.SigHash.ALL.value,
+                Transaction.SigHash.ALL,
                 "81072ecd5edaa818671662c9318a610d0fd5bada8e7951f6d8d216918b9e21e0"
         );
     }
@@ -656,7 +656,7 @@ public class TransactionTest {
         assertTaprootSigHash(
                 0,
                 taprootTestTapLeafHash(),
-                (byte) Transaction.SigHash.DEFAULT.value,
+                Transaction.SigHash.DEFAULT,
                 "fc6011b62bd02db1ef43f727925e850216657d1d8da2fba28e927f03f9f4ad9a"
         );
     }
@@ -670,7 +670,7 @@ public class TransactionTest {
         assertTaprootSigHash(
                 0,
                 taprootTestTapLeafHash(),
-                (byte) (Transaction.SigHash.ALL.value | Transaction.SigHash.ANYONECANPAY.value),
+                Transaction.SigHash.ANYONECANPAY_ALL,
                 "29f572084d6730eacc50d4cd5cb42326c13d19a6d4cf20b3f434266115141395"
         );
     }

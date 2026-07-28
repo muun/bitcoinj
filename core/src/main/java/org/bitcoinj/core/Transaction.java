@@ -1409,7 +1409,7 @@ public class Transaction extends ChildMessage {
      * <p>Passing a null scriptCode produces a key-path (BIP341) sighash. Passing the 32-byte tapleaf hash of the
      * script being spent produces a script-path (BIP342) sighash, which additionally commits to that leaf.</p>
      *
-     * <p>Limitations: only SigHash.DEFAULT, SigHash.ALL and SigHash.ALL | SigHash.ANYONECANPAY are supported;
+     * <p>Limitations: only SigHash.DEFAULT, SigHash.ALL and SigHash.ANYONECANPAY_ALL are supported;
      * SigHash.NONE, SigHash.SINGLE and the annex are not implemented. ANYONECANPAY alone (0x80) is not a valid
      * taproot sighash type per BIP341, so it is rejected. OP_CODESEPARATOR is not supported: the codesep_pos in the
      * script-path extension is always committed as 0xffffffff, so this method produces a correct sighash only for
@@ -1418,7 +1418,7 @@ public class Transaction extends ChildMessage {
      * @param inputIndex   input the signature is being calculated for. Tx signatures are always relative to an input.
      * @param scriptCode   the 32-byte tapleaf hash for a script-path spend, or null for a key-path spend.
      * @param prevOutputs  the previous outputs being spent, one per input, in input order.
-     * @param sigHashType  should be SigHash.DEFAULT, SigHash.ALL or SigHash.ALL | SigHash.ANYONECANPAY.
+     * @param sigHashType  should be SigHash.DEFAULT, SigHash.ALL or SigHash.ANYONECANPAY_ALL.
      */
     public synchronized Sha256Hash hashForTaprootSignature(
             int inputIndex,
@@ -1437,7 +1437,7 @@ public class Transaction extends ChildMessage {
         boolean anyoneCanPay = (sigHashType & SigHash.ANYONECANPAY.value) == SigHash.ANYONECANPAY.value;
         boolean signAll = (basicSigHashType != SigHash.SINGLE.value) && (basicSigHashType != SigHash.NONE.value);
 
-        // Only SigHash.DEFAULT, SigHash.ALL and SigHash.ALL | SigHash.ANYONECANPAY supported for now.
+        // Only SigHash.DEFAULT, SigHash.ALL and SigHash.ANYONECANPAY_ALL supported for now.
         // ANYONECANPAY alone (0x80) masks to DEFAULT | ANYONECANPAY, not a valid taproot type (BIP341).
         checkArgument(basicSigHashType == SigHash.DEFAULT.value || basicSigHashType == SigHash.ALL.value);
         checkArgument(!anyoneCanPay || basicSigHashType == SigHash.ALL.value);
