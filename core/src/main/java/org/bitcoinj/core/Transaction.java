@@ -1434,9 +1434,9 @@ public class Transaction extends ChildMessage {
         checkArgument(prevOutputs.size() == inputs.size());
 
         final byte sigHashTypeByte = sigHashType.byteValue();
-        int basicSigHashType = sigHashTypeByte & 0x1f;
-        boolean anyoneCanPay = (sigHashTypeByte & SigHash.ANYONECANPAY.value) == SigHash.ANYONECANPAY.value;
-        boolean signAll = (basicSigHashType != SigHash.SINGLE.value) && (basicSigHashType != SigHash.NONE.value);
+        final int basicSigHashType = sigHashTypeByte & 0x1f;
+        final boolean anyoneCanPay = (sigHashTypeByte & SigHash.ANYONECANPAY.value) == SigHash.ANYONECANPAY.value;
+        final boolean signAll = (basicSigHashType != SigHash.SINGLE.value) && (basicSigHashType != SigHash.NONE.value);
 
         // Only SigHash.DEFAULT, SigHash.ALL and SigHash.ANYONECANPAY_ALL supported for now.
         // ANYONECANPAY alone (0x80) masks to DEFAULT | ANYONECANPAY, not a valid taproot type (BIP341).
