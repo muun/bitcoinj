@@ -1409,21 +1409,22 @@ public class Transaction extends ChildMessage {
      * <p>Passing a null scriptCode produces a key-path (BIP341) sighash. Passing the 32-byte tapleaf hash of the
      * script being spent produces a script-path (BIP342) sighash, which additionally commits to that leaf.</p>
      *
-     * <p>Limitations: only SigHash.DEFAULT and SigHash.ALL without ANYONECANPAY are supported; SigHash.NONE,
-     * SigHash.SINGLE and the annex are not implemented. OP_CODESEPARATOR is not supported: the codesep_pos in the
+     * <p>Limitations: only SigHash.DEFAULT, SigHash.ALL and SigHash.ANYONECANPAY_ALL are supported;
+     * SigHash.NONE, SigHash.SINGLE and the annex are not implemented. ANYONECANPAY alone (0x80) is not a valid
+     * taproot sighash type per BIP341, so it is rejected. OP_CODESEPARATOR is not supported: the codesep_pos in the
      * script-path extension is always committed as 0xffffffff, so this method produces a correct sighash only for
      * scripts that contain no executed OP_CODESEPARATOR.</p>
      *
      * @param inputIndex   input the signature is being calculated for. Tx signatures are always relative to an input.
      * @param scriptCode   the 32-byte tapleaf hash for a script-path spend, or null for a key-path spend.
      * @param prevOutputs  the previous outputs being spent, one per input, in input order.
-     * @param sigHashType  should be SigHash.DEFAULT or SigHash.ALL, and not ANYONECANPAY.
+     * @param sigHashType  should be SigHash.DEFAULT, SigHash.ALL or SigHash.ANYONECANPAY_ALL.
      */
     public synchronized Sha256Hash hashForTaprootSignature(
             int inputIndex,
             byte[] scriptCode,
             List<TransactionOutput> prevOutputs,
-            byte sigHashType){
+            SigHash sigHashType){
 
         // A non-null scriptCode is the 32-byte tapleaf hash of the script being spent (BIP342
         // script path). Null means a key-path spend (BIP341).
@@ -1432,19 +1433,21 @@ public class Transaction extends ChildMessage {
         checkArgument(inputIndex < prevOutputs.size());
         checkArgument(prevOutputs.size() == inputs.size());
 
-        int basicSigHashType = sigHashType & 0x1f;
-        boolean anyoneCanPay = (sigHashType & SigHash.ANYONECANPAY.value) == SigHash.ANYONECANPAY.value;
-        boolean signAll = (basicSigHashType != SigHash.SINGLE.value) && (basicSigHashType != SigHash.NONE.value);
+        final byte sigHashTypeByte = sigHashType.byteValue();
+        final int basicSigHashType = sigHashTypeByte & 0x1f;
+        final boolean anyoneCanPay = (sigHashTypeByte & SigHash.ANYONECANPAY.value) == SigHash.ANYONECANPAY.value;
+        final boolean signAll = (basicSigHashType != SigHash.SINGLE.value) && (basicSigHashType != SigHash.NONE.value);
 
-        // Only SigHash.DEFAULT, SigHash.ALL and !anyoneCanPay supported for now
+        // Only SigHash.DEFAULT, SigHash.ALL and SigHash.ANYONECANPAY_ALL supported for now.
+        // ANYONECANPAY alone (0x80) masks to DEFAULT | ANYONECANPAY, not a valid taproot type (BIP341).
         checkArgument(basicSigHashType == SigHash.DEFAULT.value || basicSigHashType == SigHash.ALL.value);
-        checkArgument(!anyoneCanPay);
+        checkArgument(!anyoneCanPay || basicSigHashType == SigHash.ALL.value);
 
         final boolean hasAnnex = false; // Reserved. Not used.
         // According to BIP 341: 175 - is_anyonecanpay * 49 - is_none * 32 + has_annex * 32
         int byteArraySize = 175;
         if (anyoneCanPay) {
-            byteArraySize += 49;
+            byteArraySize -= 49;
         }
         if (basicSigHashType == SigHash.NONE.value) {
             byteArraySize += 32;
@@ -1463,8 +1466,8 @@ public class Transaction extends ChildMessage {
             // Epoch [1] (not technically part of the message, but every use-case adds this prefix)
             bos.write(new byte[] { 0x00 });
 
-            // SigHash type [1]
-            bos.write(new byte[] {(byte) basicSigHashType});
+            // SigHash type [1]: the full type byte, including the ANYONECANPAY flag if set
+            bos.write(new byte[] { sigHashTypeByte });
 
             // nVersion [4]
             uint32ToByteStreamLE(version, bos);
@@ -1472,7 +1475,8 @@ public class Transaction extends ChildMessage {
             // nLockTime [4]
             uint32ToByteStreamLE(lockTime, bos);
 
-            // input data [128 per input] always included since we failed for anyoneCanPay
+            // input data [128]: midstate hashes over all inputs, skipped for anyoneCanPay,
+            // which commits to just the signed input below instead
             if (!anyoneCanPay) {
 
                 // calcHashPrevOuts [32]
@@ -1532,7 +1536,21 @@ public class Transaction extends ChildMessage {
             bos.write(new byte[] { (byte) (hasScriptPath ? 0x02 : 0x00) });
 
             if (anyoneCanPay) {
-                // MISSING: commit to the spent output and sequence (never since we failed for anyoneCanPay)
+                final TransactionInput input = this.inputs.get(inputIndex);
+                final TransactionOutput prevOutput = prevOutputs.get(inputIndex);
+                final byte[] prevOutScriptBytes = prevOutput.getScriptBytes();
+
+                // Outpoint [36]
+                bos.write(input.getOutpoint().getHash().getReversedBytes());
+                uint32ToByteStreamLE(input.getOutpoint().getIndex(), bos);
+
+                // Spent output: amount [8] and scriptPubKey [var, with size prefix]
+                int64ToByteStreamLE(prevOutput.getValue().value, bos);
+                bos.write(new VarInt(prevOutScriptBytes.length).encode());
+                bos.write(prevOutScriptBytes);
+
+                // nSequence [4]
+                uint32ToByteStreamLE(input.getSequenceNumber(), bos);
             } else {
 
                 // Input index [4]

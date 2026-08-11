@@ -549,7 +549,7 @@ public class TransactionTest {
                 inputIndex,
                 tapLeafHash,
                 parseTaprootPrevOuts(),
-                (byte) sigHashType.value
+                sigHashType
         );
 
         assertArrayEquals(sigHash.getBytes(), Hex.decode(expectedSigHashHex));
@@ -577,6 +577,20 @@ public class TransactionTest {
                 null,
                 Transaction.SigHash.DEFAULT,
                 "92ac7cead5a678703fd3672b46d224d2bbca88d8c706ebf9f93bf60951726328"
+        );
+    }
+
+    @Test
+    public void testSigHashTaprootAnyoneCanPay() {
+        // Same key-path spend as testSigHashTaproot, signed with SIGHASH_ALL | SIGHASH_ANYONECANPAY
+        // (0x81) instead of ALL. Golden value from btcd v0.24.2: keyPathExpectedSigHash in the
+        // main.go snippet in testSigHashTaprootScriptPath, with
+        // txscript.SigHashAll|txscript.SigHashAnyOneCanPay instead of txscript.SigHashAll.
+        assertTaprootSigHash(
+                1,
+                null,
+                Transaction.SigHash.ANYONECANPAY_ALL,
+                "494fcea1db6f47aea9325255ba8b95c9f336e72a02f734c9f0c733878c463f58"
         );
     }
 
@@ -644,6 +658,20 @@ public class TransactionTest {
                 taprootTestTapLeafHash(),
                 Transaction.SigHash.DEFAULT,
                 "fc6011b62bd02db1ef43f727925e850216657d1d8da2fba28e927f03f9f4ad9a"
+        );
+    }
+
+    @Test
+    public void testSigHashTaprootScriptPathAnyoneCanPay() {
+        // Same tapscript leaf spend as testSigHashTaprootScriptPath, signed with
+        // SIGHASH_ALL | SIGHASH_ANYONECANPAY (0x81) instead of ALL. Golden value from btcd v0.24.2:
+        // the main.go snippet in testSigHashTaprootScriptPath, with
+        // txscript.SigHashAll|txscript.SigHashAnyOneCanPay instead of txscript.SigHashAll.
+        assertTaprootSigHash(
+                0,
+                taprootTestTapLeafHash(),
+                Transaction.SigHash.ANYONECANPAY_ALL,
+                "29f572084d6730eacc50d4cd5cb42326c13d19a6d4cf20b3f434266115141395"
         );
     }
 
